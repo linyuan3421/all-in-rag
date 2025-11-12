@@ -1,0 +1,22 @@
+[
+    {
+        "content": "customers表存储了所有顾客的基本信息。city字段表示顾客所在的城市，对于分析地域销售差异非常重要。",
+        "type": "description"
+    },
+    {
+        "content": "products表是商品信息表。category字段是商品品类，是进行销售分类统计的核心字段。price是当前最新单价。",
+        "type": "description"
+    },
+    {
+        "content": "orders表记录了所有订单的摘要信息。status字段表示订单状态，'已完成'状态的订单才是有效销售额。",
+        "type": "description"
+    },
+    {
+        "content": "order_items表是订单的关键详情表，它通过order_id和product_id将订单和商品关联起来。计算总销售额需要将quantity和unit_price相乘。",
+        "type": "description"
+    },
+    {
+        "content": "logistics表记录了已发货订单的物流信息。delivery_time_days表示从发货到送达所需天数。",
+        "type": "description"
+    }
+]

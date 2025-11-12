@@ -4,181 +4,113 @@ from typing import List, Dict, Any
 from pymilvus import MilvusClient, FieldSchema, CollectionSchema, DataType
 from pymilvus.model.hybrid import BGEM3EmbeddingFunction
 
-
 class SimpleKnowledgeBase:
-    """知识库"""
-    
-    def __init__(self, milvus_uri: str = "http://localhost:19530"):
-        self.milvus_uri = milvus_uri
-        self.client = MilvusClient(uri=milvus_uri)
+    """
+    一个简化的知识库，使用Milvus存储和检索与Text2SQL相关的知识。
+    知识类型包括：
+    1. DDL: 数据库表的创建语句。
+    2. Description: 表和字段的业务描述。
+    3. Q-SQL: "问题-SQL"示例对。
+    """
+    def __init__(self, collection_name: str = "text2sql_ecommerce_kb"):
+        # --- 从环境变量安全地加载Zilliz Cloud配置 ---
+        ZILLIZ_CLOUD_URI = os.getenv("ZILLIZ_CLOUD_URI")
+        ZILLIZ_CLOUD_USER = os.getenv("ZILLIZ_CLOUD_USER")
+        ZILLIZ_CLOUD_PASSWORD = os.getenv("ZILLIZ_CLOUD_PASSWORD")
+        
+        # 2. 检查变量是否存在，如果不存在则给出清晰的错误提示
+        if not all([ZILLIZ_CLOUD_URI, ZILLIZ_CLOUD_USER, ZILLIZ_CLOUD_PASSWORD]):
+            raise ValueError("Zilliz Cloud的环境变量未设置完整 (ZILLIZ_CLOUD_URI, ZILLIZ_CLOUD_USER, ZILLIZ_CLOUD_PASSWORD)")
+
+        self.collection_name = collection_name
+        
+        # 3. 使用从环境中读取的值来创建客户端
+        self.client = MilvusClient(
+            uri=ZILLIZ_CLOUD_URI,
+            user=ZILLIZ_CLOUD_USER,
+            password=ZILLIZ_CLOUD_PASSWORD
+        )
+        
+        # 使用BGE-M3同时生成密集和稀疏向量，但本基础版只使用密集向量
         self.embedding_function = BGEM3EmbeddingFunction(use_fp16=False, device="cpu")
-        self.collection_name = "text2sql_kb"
+        self.dense_dim = self.embedding_function.dim["dense"]
+        
         self._setup_collection()
-    
+
     def _setup_collection(self):
-        """设置集合"""
+        """如果集合不存在，则创建它。"""
         if self.client.has_collection(self.collection_name):
-            self.client.drop_collection(self.collection_name)
-        
-        # 定义字段
-        fields = [
-            FieldSchema(name="pk", dtype=DataType.VARCHAR, is_primary=True, auto_id=True, max_length=100),
-            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=4096),
-            FieldSchema(name="type", dtype=DataType.VARCHAR, max_length=32),  # ddl, qsql, description
-            FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=self.embedding_function.dim["dense"])
-        ]
-        
-        schema = CollectionSchema(fields, description="Text2SQL知识库")
-        
-        # 创建集合
-        self.client.create_collection(
-            collection_name=self.collection_name,
-            schema=schema,
-            consistency_level="Strong"
-        )
-        
-        # 创建索引
-        index_params = self.client.prepare_index_params()
-        index_params.add_index(
-            field_name="dense_vector",
-            index_type="AUTOINDEX",
-            metric_type="IP"
-        )
-        
-        self.client.create_index(
-            collection_name=self.collection_name,
-            index_params=index_params
-        )
-    
-    def load_data(self):
-        """加载所有知识库数据"""
-        data_dir = os.path.join(os.path.dirname(__file__), "data")
-        
-        # 加载DDL数据
-        ddl_path = os.path.join(data_dir, "ddl_examples.json")
-        if os.path.exists(ddl_path):
-            with open(ddl_path, 'r', encoding='utf-8') as f:
-                ddl_data = json.load(f)
-            self._add_ddl_data(ddl_data)
-        
-        # 加载Q->SQL数据
-        qsql_path = os.path.join(data_dir, "qsql_examples.json")
-        if os.path.exists(qsql_path):
-            with open(qsql_path, 'r', encoding='utf-8') as f:
-                qsql_data = json.load(f)
-            self._add_qsql_data(qsql_data)
-        
-        # 加载描述数据
-        desc_path = os.path.join(data_dir, "db_descriptions.json")
-        if os.path.exists(desc_path):
-            with open(desc_path, 'r', encoding='utf-8') as f:
-                desc_data = json.load(f)
-            self._add_description_data(desc_data)
-        
-        # 加载集合到内存
-        self.client.load_collection(collection_name=self.collection_name)
-        print("知识库数据加载完成")
-    
-    def _add_ddl_data(self, data: List[Dict]):
-        """添加DDL数据"""
-        contents = []
-        types = []
-        
-        for item in data:
-            content = f"表名: {item.get('table_name', '')}\n"
-            content += f"DDL: {item.get('ddl_statement', '')}\n"
-            content += f"描述: {item.get('description', '')}"
+            print(f"集合 '{self.collection_name}' 已存在，跳过创建。")
+        else:
+            print(f"集合 '{self.collection_name}' 不存在，开始创建...")
+            fields = [
+                FieldSchema(name="pk", dtype=DataType.VARCHAR, is_primary=True, auto_id=True, max_length=100),
+                FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=4096),
+                FieldSchema(name="type", dtype=DataType.VARCHAR, max_length=32),
+                FieldSchema(name="dense_vector", dtype=DataType.FLOAT_VECTOR, dim=self.dense_dim)
+            ]
+            schema = CollectionSchema(fields, description="Text2SQL电商知识库")
+            self.client.create_collection(self.collection_name, schema=schema)
+            print("集合创建成功。正在创建索引...")
             
-            contents.append(content)
-            types.append("ddl")
-        
-        self._insert_data(contents, types)
-    
-    def _add_qsql_data(self, data: List[Dict]):
-        """添加Q->SQL数据"""
-        contents = []
-        types = []
-        
-        for item in data:
-            content = f"问题: {item.get('question', '')}\n"
-            content += f"SQL: {item.get('sql', '')}"
-            
-            contents.append(content)
-            types.append("qsql")
-        
-        self._insert_data(contents, types)
-    
-    def _add_description_data(self, data: List[Dict]):
-        """添加描述数据"""
-        contents = []
-        types = []
-        
-        for item in data:
-            content = f"表名: {item.get('table_name', '')}\n"
-            content += f"表描述: {item.get('table_description', '')}\n"
-            
-            columns = item.get('columns', [])
-            if columns:
-                content += "字段信息:\n"
-                for col in columns:
-                    content += f"  - {col.get('name', '')}: {col.get('description', '')} ({col.get('type', '')})\n"
-            
-            contents.append(content)
-            types.append("description")
-        
-        self._insert_data(contents, types)
-    
-    def _insert_data(self, contents: List[str], types: List[str]):
-        """插入数据"""
-        if not contents:
+            index_params = self.client.prepare_index_params()
+            index_params.add_index(field_name="dense_vector", index_type="AUTOINDEX", metric_type="IP")
+            self.client.create_index(self.collection_name, index_params)
+            print("索引创建成功。")
+
+    def load_data_from_json(self, file_path: str):
+        """从JSON文件加载数据并插入知识库。"""
+        print(f"正在从 '{file_path}' 加载数据...")
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print(f"错误：文件 '{file_path}' 未找到。")
             return
+            
+        contents = [item['content'] for item in data]
+        types = [item['type'] for item in data]
         
-        # 生成嵌入
+        if not contents:
+            print("文件中没有可加载的内容。")
+            return
+            
+        print(f"正在为 {len(contents)} 条内容生成向量...")
         embeddings = self.embedding_function(contents)
+        dense_vectors = embeddings['dense']
         
-        # 构建插入数据，每一行是一个字典
-        data_to_insert = []
+        entities = []
         for i in range(len(contents)):
-            data_to_insert.append({
+            entities.append({
                 "content": contents[i],
                 "type": types[i],
-                "dense_vector": embeddings["dense"][i]
+                "dense_vector": dense_vectors[i]
             })
-        
-        # 插入数据
-        result = self.client.insert(
-            collection_name=self.collection_name,
-            data=data_to_insert
-        )
-    
-    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """搜索相关内容"""
-        self.client.load_collection(collection_name=self.collection_name)
             
+        print(f"正在向集合 '{self.collection_name}' 插入 {len(entities)} 条实体...")
+        self.client.insert(self.collection_name, data=entities)
+        print("数据插入成功。")
+        
+    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """根据查询，从知识库中搜索最相关的信息。"""
+        print(f"\n正在知识库中搜索与 '{query}' 相关的信息...")
         query_embeddings = self.embedding_function([query])
         
         search_results = self.client.search(
             collection_name=self.collection_name,
             data=query_embeddings["dense"],
-            anns_field="dense_vector",
-            search_params={"metric_type": "IP"},
             limit=top_k,
             output_fields=["content", "type"]
         )
         
-        results = []
-        for hit in search_results[0]:
-            results.append({
-                "content": hit["entity"]["content"],
-                "type": hit["entity"]["type"],
-                "score": hit["distance"]
-            })
-        
-        return results
-    
-    def cleanup(self):
-        """清理资源"""
-        try:
-            self.client.drop_collection(self.collection_name)
-        except:
-            pass 
+        # 格式化输出
+        results_list = []
+        for hits in search_results:
+            for hit in hits:
+                results_list.append({
+                    "score": hit['distance'],
+                    "content": hit['entity']['content'],
+                    "type": hit['entity']['type']
+                })
+        print(f"检索到 {len(results_list)} 条相关信息。")
+        return results_list
