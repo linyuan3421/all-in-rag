@@ -58,6 +58,11 @@ class SimpleKnowledgeBase:
             self.client.create_index(self.collection_name, index_params)
             print("索引创建成功。")
 
+            # ⬇️⬇️⬇️ 加上这一行代码 ⬇️⬇️⬇️
+        print(f"正在加载集合 '{self.collection_name}' 到内存中...")
+        self.client.load_collection(self.collection_name)
+        print("集合加载成功。")
+
     def load_data_from_json(self, file_path: str):
         """从JSON文件加载数据并插入知识库。"""
         print(f"正在从 '{file_path}' 加载数据...")

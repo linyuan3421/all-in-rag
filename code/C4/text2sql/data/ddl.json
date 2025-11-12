@@ -1,1 +1,22 @@
-[]
+[
+    {
+        "content": "CREATE TABLE \"customers\" (\n\"customer_id\" TEXT,\n  \"customer_name\" TEXT,\n  \"city\" TEXT,\n  \"age\" INTEGER,\n  \"gender\" TEXT\n)",
+        "type": "ddl"
+    },
+    {
+        "content": "CREATE TABLE \"products\" (\n\"product_id\" TEXT,\n  \"product_name\" TEXT,\n  \"category\" TEXT,\n  \"price\" REAL\n)",
+        "type": "ddl"
+    },
+    {
+        "content": "CREATE TABLE \"orders\" (\n\"order_id\" TEXT,\n  \"customer_id\" TEXT,\n  \"order_date\" TEXT,\n  \"status\" TEXT\n)",
+        "type": "ddl"
+    },
+    {
+        "content": "CREATE TABLE \"order_items\" (\n\"order_item_id\" INTEGER,\n  \"order_id\" TEXT,\n  \"product_id\" TEXT,\n  \"quantity\" INTEGER,\n  \"unit_price\" REAL\n)",
+        "type": "ddl"
+    },
+    {
+        "content": "CREATE TABLE \"logistics\" (\n\"logistics_id\" INTEGER,\n  \"order_id\" TEXT,\n  \"shipping_date\" TEXT,\n  \"delivery_time_days\" INTEGER,\n  \"shipping_company\" TEXT\n)",
+        "type": "ddl"
+    }
+]
